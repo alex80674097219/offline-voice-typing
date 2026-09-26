@@ -71,6 +71,40 @@ costal = Kostal
 # власні назви
 аванте = Avante
 авантє = Avante
+# "Avante 99" з'являється лише після перетворення чисел - другий прохід словника
+avante 99 = Avante99
+# SilberBerg3D - модель чує "Сильберберх трид", "Силберберг три д"
+сильберберг три д = SilberBerg3D
+сильберберг трид = SilberBerg3D
+сильберберх три д = SilberBerg3D
+сильберберх трид = SilberBerg3D
+силберберг три д = SilberBerg3D
+силберберг трид = SilberBerg3D
+зильберберг три д = SilberBerg3D
+сильберберг 3д = SilberBerg3D
+silberberg 3d = SilberBerg3D
+silberberg three d = SilberBerg3D
+сильберберг = SilberBerg3D
+сильберберх = SilberBerg3D
+силберберг = SilberBerg3D
+зильберберг = SilberBerg3D
+silberberg = SilberBerg3D
+# ConfigExpert.Energy - модель ставить крапку й дефіс як хоче:
+# "Конфиг-эксперт. Точка Энерджи." Пробіл у правилі покриває і їх.
+конфиг эксперт точка энерджи = ConfigExpert.Energy
+конфиг эксперт энерджи = ConfigExpert.Energy
+конфіг експерт крапка енерджі = ConfigExpert.Energy
+конфіг експерт точка енерджі = ConfigExpert.Energy
+конфіг експерт енерджі = ConfigExpert.Energy
+config expert energy = ConfigExpert.Energy
+config expert dot energy = ConfigExpert.Energy
+конфиг точка энерджи = ConfigExpert.Energy
+конфіг точка енерджі = ConfigExpert.Energy
+конфиг эксперт = ConfigExpert
+конфіг експерт = ConfigExpert
+config expert = ConfigExpert
+# Victron - "Викторо мульти плюс"
+викторо = Victron
 # REFUsol
 рефузол = REFUsol
 рефу сол = REFUsol

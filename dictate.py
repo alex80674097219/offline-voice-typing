@@ -610,7 +610,12 @@ def _load_replacements():
             pat, rep = pat.strip(), rep.strip()
             if not pat:
                 continue
-            rx = re.compile(r"(?<!\w)" + re.escape(pat) + r"(?!\w)",
+            # Між словами правила модель може поставити будь-що:
+            # "Конфиг-эксперт. Точка Энерджи." - тому пробіл у правилі
+            # означає "пробіли, крапки, коми або дефіси".
+            words = [re.escape(w) for w in re.split(r"[\s\-]+", pat) if w]
+            body = r"[\s.,\-–]+".join(words)
+            rx = re.compile(r"(?<!\w)" + body + r"(?!\w)",
                             re.IGNORECASE | re.UNICODE)
             pairs.append((rx, rep))
     except Exception as exc:
@@ -737,6 +742,12 @@ def _do_transcribe(item):
             if digits != text:
                 log("numbers: %r -> %r" % (text, digits))
                 text = digits
+                # Другий прохід словника - для назв із цифрами, які з'являються
+                # лише після перетворення: "Avante 99" -> "Avante99".
+                again = fix_terms(text)
+                if again != text:
+                    log("terms: %r -> %r" % (text, again))
+                    text = again
     return text, data, seq, cut_at
 
 
@@ -778,8 +789,10 @@ def paster_worker():
                 if continues:
                     text = join_previous(text)
                 archive(data, text)
+                # "P" + пауза + "дробь 16" -> "P/16", а не "P /16".
+                glue = first or (joining[0] and text.startswith("/"))
                 try:
-                    paste(text if first else " " + text)
+                    paste(text if glue else " " + text)
                 except Exception as exc:
                     # Текст уже розпізнано - не губити його мовчки.
                     log("ERROR paste failed (%s), text was: %s" % (exc, text))

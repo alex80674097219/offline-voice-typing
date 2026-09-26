@@ -144,6 +144,29 @@ and ranges («місяць-півтора») stay as words. Tested on 3,277 real
 phrases: 109 changed, none wrongly. `NUMBERS=0` in `settings.txt` turns it
 off; every conversion is logged.
 
+It also knows the shapes numbers take in real work:
+
+| Said | Typed |
+|---|---|
+| «один мільйон двісті п'ятдесят шість тисяч» | `1256000` (no spaces) |
+| «мій номер телефону плюс сорок один, сімдесят дев'ять, сто двадцять три, сорок п'ять, шістдесят сім» | `+41791234567` |
+| «нуль сорок чотири», «ноль ноль один» | `044`, `001` |
+| «п'ять дробь шістнадцять», «Р дробь шістнадцять» | `5/16`, `Р/16` |
+| «п'ять тире шістнадцять», «два-три дні», «три чотири абзаци» | `5-16`, `2-3 дні`, `3-4 абзаци` |
+
+A phone number is joined only with a clear signal — a leading «плюс», or the
+word «телефон»/«номер» earlier in the phrase — and at least 7 digits in 3+
+groups, so an ordinary list like «десять, п'ятнадцять, двадцять» stays a list.
+
+Names that contain digits (`Avante99`) work through `replacements.txt`:
+the dictionary runs once before the number conversion and once after it.
+A space in a dictionary rule also matches the dots and hyphens the model
+likes to insert — «Конфиг-эксперт. Точка Энерджи.» still becomes
+`ConfigExpert.Energy`.
+
+One limit: a pause in the middle of a number splits it into two phrases,
+and each is converted on its own. Say a number in one breath.
+
 ## Install
 
 Requires Python 3.10+ and Windows 10/11. No GPU needed.
@@ -392,6 +415,11 @@ Scroll Lock одразу повертаються у попередній ста
 або з двох і більше слів, або з одиницею після нього (кВт, %, грн, метри,
 години, штуки). «Один момент», «через два дні», дати й діапазони лишаються
 словами. Перевірено на 3277 реальних фразах. Вимикається `NUMBERS=0`.
+Великі числа — без пробілів (`1256000`), телефон — одним блоком
+(`+41791234567`, якщо попереду «плюс» або слово «телефон»/«номер»),
+«нуль сорок чотири» → `044`, «п'ять дробь шістнадцять» → `5/16`,
+«п'ять тире шістнадцять» → `5-16`. Число кажи на одному подиху: пауза
+посередині ділить його на дві фрази.
 
 **Словник термінів.** Моделі пишуть бренди так, як ти їх вимовляєш:
 «Викторон», «Кастар», «Пайлонтеч». Файл `replacements.txt` виправляє це

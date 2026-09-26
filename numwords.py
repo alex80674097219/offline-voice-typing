@@ -180,10 +180,77 @@ def _value(tokens):
 def _fmt(v):
     if isinstance(v, float) and not v.is_integer():
         return ("%.1f" % v).replace(".", ",")
-    s = str(int(v))
-    if len(s) >= 5:                            # 52000 -> 52 000
-        s = "{:,}".format(int(v)).replace(",", " ")
-    return s
+    return str(int(v))                         # 1256000, без пробілів
+
+
+# --- дроби, діапазони, телефони -------------------------------------------
+# Одна цифра словом ("п'ять") основний прохід не чіпає. Тут вона потрібна:
+# "п'ять дробь шістнадцять" -> "5/16".
+def _digit(tok):
+    if tok.isdigit():
+        return tok
+    v = _UNITS.get(tok.lower().replace("’", "'"))
+    return None if v is None else str(v)
+
+_N = r"(\d+|[A-Za-zА-Яа-яІіЇїЄєҐґЁё'’]+)"
+# "дробь" модель чує як "дроб", "дроп", "друп".
+_SLASH = r"(?:дробь|дріб|дроб|дроп|друп|drop|slash|слеш|слэш)"
+_FRACTION = re.compile(r"(?<!\w)" + _N + r"\s+" + _SLASH + r"\s+" + _N + r"(?!\w)", re.I)
+_LEAD_FRACTION = re.compile(r"^" + _SLASH + r"\s+" + _N + r"(?!\w)", re.I)
+_RANGE = re.compile(r"(?<!\w)" + _N + r"\s+(?:тире|дефис|дефіс)\s+" + _N + r"(?!\w)", re.I)
+
+
+def _fractions(text):
+    def frac(m):
+        left, right = m.group(1), _digit(m.group(2))
+        if right is None:
+            return m.group(0)
+        d = _digit(left)
+        # ліворуч - число або одна літера коду об'єкта: "Р дробь 16" -> "Р/16"
+        if d is None and len(left) != 1:
+            return m.group(0)
+        return "%s/%s" % (d or left, right)
+
+    def rng(m):
+        a, b = _digit(m.group(1)), _digit(m.group(2))
+        return "%s-%s" % (a, b) if a and b else m.group(0)
+
+    text = _FRACTION.sub(frac, text)
+    text = _LEAD_FRACTION.sub(lambda m: "/" + _digit(m.group(1)) if _digit(m.group(1)) else m.group(0), text)
+    return _RANGE.sub(rng, text)
+
+
+# Телефон: "плюс 41, 79, 123, 45, 67" -> "+41791234567".
+# Лише коли є ознака телефону - "плюс" попереду або слово "телефон"/"номер"
+# раніше в реченні - і груп щонайменше 3, а цифр 7+. Інакше "10, 15, 20"
+# лишилося б склеєним в одне число.
+_PHONE_WORD = re.compile(r"(телефон|номер|моб[іи]льн|phone|number|telefon|nummer|handy)", re.I)
+_TOKEN = r"(?:\d+|нуль|ноль|zero|null|один|одна|два|дві|две|три|чотири|четыре|п'ять|пять|шість|шесть|сім|семь|вісім|восемь|дев'ять|девять)"
+_PHONE_RUN = re.compile(r"(?<!\w)(?:(плюс|\+)\s*)?(" + _TOKEN + r"(?:[\s,.\-]+" + _TOKEN + r")+)(?!\w)", re.I)
+
+
+def _phones(text):
+    def ph(m):
+        plus, run = m.group(1), m.group(2)
+        toks = [t for t in re.split(r"[\s,.\-]+", run) if t]
+        digits = []
+        for t in toks:
+            d = _digit(t) if not t.isdigit() else t
+            if d is None:
+                if t.lower() in ("нуль", "ноль", "zero", "null"):
+                    d = "0"
+                else:
+                    return m.group(0)
+            digits.append(d)
+        joined = "".join(digits)
+        before = text[:m.start()]
+        if len(toks) < 3 or len(joined) < 7:
+            return m.group(0)
+        if not plus and not _PHONE_WORD.search(before):
+            return m.group(0)
+        # хвостову крапку речення не з'їдаємо
+        return ("+" if plus else "") + joined
+    return _PHONE_RUN.sub(ph, text)
 
 
 def convert(text):
@@ -196,6 +263,7 @@ def convert(text):
     while i < len(words):
         # збираємо максимальну послідовність числових слів
         seq = []
+        per_word = []            # токени кожного слова окремо
         j = i
         while j < len(words):
             w = words[j].group(0)
@@ -208,13 +276,48 @@ def convert(text):
             # між словами має бути лише пробіл/дефіс
             if seq and not re.fullmatch(r"[ \-]+", text[words[j-1].end():words[j].start()]):
                 break
-            seq.extend(parts if parts else [c])
+            toks = parts if parts else [c]
+            seq.extend(toks)
+            per_word.append(toks)
             j += 1
         if not seq:
             i += 1
             continue
         val = _value(seq)
         nwords = j - i
+        if val is None and nwords >= 2:
+            # Кілька чисел підряд без ком: "тридцять вісім нуль шістдесят сім",
+            # "два-три дні". Ріжемо жадібно на найдовші коректні числа
+            # і кожне пишемо цифрами, роздільники між ними лишаємо як були.
+            segs = []
+            a = 0
+            while a < nwords:
+                b = nwords
+                while b > a and _value([t for pw in per_word[a:b] for t in pw]) is None:
+                    b -= 1
+                if b == a:
+                    segs = None
+                    break
+                segs.append((a, b))
+                a = b
+            if segs and len(segs) > 1 and not all(
+                    k == "d" for pw in per_word for k, _ in pw):
+                vals = [_value([t for pw in per_word[a:b] for t in pw]) for a, b in segs]
+                seps = [text[words[i + a - 1].end():words[i + a].start()] for a, _ in segs[1:]]
+                out.append(text[pos:words[i].start()])
+                if (len(vals) == 2 and seps[0] == " " and vals[0] < vals[1] < vals[0] * 10
+                        and vals[0] >= 1):
+                    # "три чотири абзаци" -> "3-4", "п'ятдесят сто" -> "50-100"
+                    out.append("%s-%s" % (_fmt(vals[0]), _fmt(vals[1])))
+                else:
+                    for n, v in enumerate(vals):
+                        if n:
+                            # "нуль сорок чотири" -> "044", "ноль ноль один" -> "001"
+                            out.append("" if vals[n - 1] == 0 and seps[n - 1] == " " else seps[n - 1])
+                        out.append(_fmt(v))
+                pos = words[j - 1].end()
+            i = j
+            continue
         after = text[words[j-1].end():].lstrip()
         has_unit = bool(_UNIT_AFTER.match(after))
         if _ORDINAL_AFTER.match(after) and not has_unit:
@@ -238,7 +341,7 @@ def convert(text):
             pos = words[j-1].end()
         i = j
     out.append(text[pos:])
-    return "".join(out)
+    return _phones(_fractions("".join(out)))
 
 
 if __name__ == "__main__":
@@ -262,5 +365,13 @@ if __name__ == "__main__":
         for t in ("сім тисяч п'ятсот гривень", "через дві години", "один момент",
                   "Викторон восемь киловатт", "пятьдесят две тысячи",
                   "дві тисячі двадцять шостого року", "місяць-півтора",
-                  "fünfundzwanzig Prozent", "two hundred fifty panels"):
-            print("%-40s -> %s" % (t, convert(t)))
+                  "fünfundzwanzig Prozent", "two hundred fifty panels",
+                  "Один миллион двести пятьдесят шесть тысяч.",
+                  "мой номер телефона плюс сорок один, семьдесят девять, сто двадцять три, сорок пять, шестьдесят семь.",
+                  "телефон ноль семьдесят девять сто двадцять три сорок пять шестьдесят семь",
+                  "Десять плюс десять плюс десять кіловат",
+                  "Сорок четыре, двадцать девять.",
+                  "5 дроб шестнадцать.", "пять дроп шестнадцать", "Р дробь шестнадцать киловатт",
+                  "Дробь шестнадцать киловатт.", "пять тире шестнадцать", "два-три дні",
+                  "Тридцать дроп.", "Разница два семьсот", "система дробь 16"):
+            print("%-45s -> %s" % (t[:45], convert(t)))
