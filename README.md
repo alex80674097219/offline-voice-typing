@@ -133,6 +133,17 @@ down for the last 10 seconds. A microphone left on is a liability.
 **Only one copy runs.** Starting it twice would paste every phrase twice;
 the second instance exits immediately.
 
+**Numbers come out as digits.** Parakeet writes numbers as words —
+«сім тисяч п'ятсот гривень», "fünfundzwanzig Prozent". A small rule-based
+converter (`numwords.py`, Ukrainian / Russian / English / German, no network)
+turns them into `7500 гривень` and `25 Prozent`. It is deliberately
+conservative: a number is converted only if it is ≥ 10, or spelled with two
+or more words, or followed by a unit (kW, %, currency, metres, hours,
+pieces). So «один момент», «через два дні», dates («двадцять шостого року»)
+and ranges («місяць-півтора») stay as words. Tested on 3,277 real dictated
+phrases: 109 changed, none wrongly. `NUMBERS=0` in `settings.txt` turns it
+off; every conversion is logged.
+
 ## Install
 
 Requires Python 3.10+ and Windows 10/11. No GPU needed.
@@ -290,7 +301,8 @@ can do these things.
 - Won't see the hotkey while an elevated (admin) window has focus. Windows
   restriction; run it elevated too if you need that.
 - Parakeet drops some question marks and prefers a few older Ukrainian
-  spellings («проектів» over «проєктів»). Numbers are written as words.
+  spellings («проектів» over «проєктів»). Ordinal numbers and dates stay
+  as words by design.
 - German with a heavy Slavic accent is poor on every model tested — force
   `de` with `Ctrl+Alt+L` and let the cloud have a go, or speak slower.
 - Brand names follow *your* pronunciation. `replacements.txt` exists for a
@@ -374,6 +386,12 @@ Scroll Lock одразу повертаються у попередній ста
 зникає, наступне слово стає з малої літери.
 
 **Вимикається саме** після 2 хвилин тиші, з відліком на плашці.
+
+**Числа — цифрами.** Модель пише «сім тисяч п'ятсот гривень»; програма
+робить з цього «7500 гривень». Обережно: переводиться лише число ≥ 10,
+або з двох і більше слів, або з одиницею після нього (кВт, %, грн, метри,
+години, штуки). «Один момент», «через два дні», дати й діапазони лишаються
+словами. Перевірено на 3277 реальних фразах. Вимикається `NUMBERS=0`.
 
 **Словник термінів.** Моделі пишуть бренди так, як ти їх вимовляєш:
 «Викторон», «Кастар», «Пайлонтеч». Файл `replacements.txt` виправляє це

@@ -69,6 +69,13 @@ LOCAL_THREADS = int(cfg("LOCAL_THREADS", "8"))
 # Якщо локальна модель впала або ще вантажиться - фраза йде у хмару.
 LOCAL_FALLBACK = cfg("LOCAL_FALLBACK", "1").strip().lower() not in ("0", "no", "")
 MODELS_DIR = BASE_DIR / "models"
+# Числівники словами -> цифри ("сім тисяч п'ятсот" -> 7500). Локальна модель
+# пише числа словами; правила і винятки - у numwords.py. 0 = вимкнути.
+NUMBERS = cfg("NUMBERS", "1").strip().lower() not in ("0", "no", "")
+try:
+    import numwords as _numwords
+except Exception:
+    _numwords = None
 # Empty LANGUAGE = auto-detect per phrase. ALLOWED_LANGS is the guard: if
 # the model reports a language Alex does not dictate in, the phrase is
 # transcribed again as FALLBACK_LANG instead of producing e.g. Belarusian.
@@ -721,6 +728,15 @@ def _do_transcribe(item):
         if fixed != text:
             log("terms: %r -> %r" % (text, fixed))
             text = fixed
+        if NUMBERS and _numwords is not None:
+            try:
+                digits = _numwords.convert(text)
+            except Exception as exc:
+                log("numbers: error %s" % exc)
+                digits = text
+            if digits != text:
+                log("numbers: %r -> %r" % (text, digits))
+                text = digits
     return text, data, seq, cut_at
 
 
