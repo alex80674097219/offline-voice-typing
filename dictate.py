@@ -59,6 +59,9 @@ def cfg(name, default):
 #         "chat"  = Gemini via chat completions (old fallback).
 ENGINE = cfg("ENGINE", "local").lower()
 STT_MODEL = cfg("STT_MODEL", "openai/whisper-large-v3-turbo")
+# Друга хмарна модель: дубль-запит після HEDGE_AFTER іде саме до неї
+# (інший постачальник - незалежна черга). Порожнє = дубль тієї ж моделі.
+STT_RESERVE = cfg("STT_RESERVE", "").strip()
 CHAT_MODEL = cfg("CHAT_MODEL", "google/gemini-2.5-flash")
 # Локальна модель. Заміряно 13.09.2026 на 40 архівних фразах, i9-12900F:
 #   8 потоків: медіана 0.16 с, p95 0.34 с, найгірша (11 с мови) 0.48 с,
@@ -89,6 +92,10 @@ LANG_MAP = {
     "belarusian": "be", "polish": "pl", "bulgarian": "bg",
     "serbian": "sr", "macedonian": "mk", "czech": "cs", "slovak": "sk",
     "croatian": "hr", "dutch": "nl", "kazakh": "kk", "romanian": "ro",
+    # ElevenLabs Scribe повертає ISO 639-3. Без цих рядків кожна російська
+    # фраза ("rus") вважалася б чужою мовою і перероблялася як українська.
+    "ukr": "uk", "rus": "ru", "eng": "en", "deu": "de", "ger": "de",
+    "bel": "be", "pol": "pl", "bul": "bg",
 }
 HOTKEY = cfg("HOTKEY", "num lock, scroll lock, pause")
 # Keys listed here are swallowed so the focused app never sees them.
@@ -413,13 +420,19 @@ def transcribe_stt(data):
         "temperature": 0,
         "response_format": "verbose_json",
     }
-    if PROVIDER_ORDER:
+    # Порядок DeepInfra/Groq має сенс лише для whisper - інші моделі
+    # обслуговує один постачальник.
+    if PROVIDER_ORDER and "whisper" in STT_MODEL:
         payload["provider"] = {"order": PROVIDER_ORDER,
                                "allow_fallbacks": True}
     if forced:
         payload["language"] = forced
     alt = None
-    if len(PROVIDER_ORDER) > 1:
+    if STT_RESERVE and STT_RESERVE != STT_MODEL:
+        alt = dict(payload)
+        alt["model"] = STT_RESERVE
+        alt.pop("provider", None)
+    elif len(PROVIDER_ORDER) > 1 and "whisper" in STT_MODEL:
         alt = dict(payload)
         alt["provider"] = {"order": list(reversed(PROVIDER_ORDER)),
                            "allow_fallbacks": True}
@@ -552,8 +565,46 @@ def transcribe(data):
                 if not LOCAL_FALLBACK:
                     raise
                 log("local engine failed (%s) - cloud fallback" % exc)
-    _last_engine[0] = "cloud"
-    return transcribe_stt(data)
+        _last_engine[0] = "cloud"
+        return clean_cloud(transcribe_stt(data))
+    # ENGINE=stt: хмара основна (якість), локальна - страховка без інтернету.
+    try:
+        _last_engine[0] = "cloud"
+        return clean_cloud(transcribe_stt(data))
+    except Exception as exc:
+        if not (LOCAL_FALLBACK and _local["model"] is not None):
+            raise
+        log("cloud failed (%s) - local fallback" % exc)
+        _last_engine[0] = "local"
+        return transcribe_local(data)
+
+
+# Scribe вставляє теги подій і "э-э"/"е-е". Модель не вимикає це через
+# OpenRouter, тож чистимо тут. Обірвані слова ("нужда--") не чіпаємо.
+_TAG_RX = re.compile(r"[\[\(\*][^\]\)\*]{1,40}[\]\)\*]")
+_FILLER_RX = re.compile(
+    # "э", "ээ", "э-э-э", "е-е", "мм", "эм", uh/um. НЕ чіпаємо "є", "a", "е".
+    r"(?<![\w-])(?:[Ээ]+(?:-[Ээ]+)*|[Ее]+(?:-[Ее]+)+|[Мм]{2,}|[Ээ]м+|"
+    r"[Uu]h+|[Uu]m+|[Hh]mm+)(?![\w-])[,.]?\s*")
+
+
+def clean_cloud(text):
+    if not text:
+        return text
+    t = _TAG_RX.sub("", text)
+    t = _FILLER_RX.sub("", t)
+    t = re.sub(r"\s{2,}", " ", t).strip(" ,")
+    if t.count('"') % 2:
+        t = t.replace('"', "")
+    t = t.strip("«»").strip()
+    if t and t != text.strip():
+        # Після вирізаного "Э-э," речення має починатися з великої.
+        t = t[0].upper() + t[1:]
+        t = re.sub(r"([.!?]\s+)(\w)", lambda m: m.group(1) + m.group(2).upper(), t)
+    # Scribe не ставить крапку в кінці - ставимо, як інші моделі.
+    if t and t[-1].isalnum():
+        t += "."
+    return t
 
 
 def paste(text):
@@ -1144,6 +1195,11 @@ def main():
         log("cloud reserve: %s (used while the model loads, on failure, "
             "and for a forced language via %s)" % (STT_MODEL, LANG_HOTKEY))
         threading.Thread(target=_load_local_model, daemon=True).start()
+    elif ENGINE == "stt":
+        log("cloud reserve (hedge): %s" % (STT_RESERVE or "same model"))
+        if LOCAL_FALLBACK:
+            log("offline fallback: local %s" % LOCAL_MODEL)
+            threading.Thread(target=_load_local_model, daemon=True).start()
     if not get_api_key():
         if ENGINE == "local":
             log("WARNING: no API key in %s - no cloud reserve" % KEY_FILE)
