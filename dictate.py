@@ -617,8 +617,13 @@ def clean_cloud(text):
 def paste(text):
     _pasting.set()
     try:
+        # Відновлюємо старий буфер лише якщо там був ТЕКСТ. pyperclip бачить
+        # тільки текст: якщо в буфері скріншот (Snipping Tool), paste() дасть
+        # порожньо, і copy(old) затре картинку. 09.11 через це губилися скріншоти.
         try:
             old = pyperclip.paste()
+            if not old:
+                old = None
         except Exception:
             old = None
         for mod in ("ctrl", "alt", "shift", "windows"):
@@ -628,16 +633,18 @@ def paste(text):
                 pass
         # Буфер обміну в Windows - спільний ресурс: поки інша програма
         # (скріншот, Telegram, браузер) його тримає, OpenClipboard падає.
-        # 13.09 так втратилося 5 фраз поспіль. Тепер - до 8 спроб за ~0.4 с.
+        # 13.09 так втратилося 5 фраз поспіль. 09.11: 8 спроб за 0.4 с - це
+        # шторм OpenClipboard, який сам конфліктує зі Snipping Tool; тепер
+        # 3 спроби з паузою 0.15 с (той самий ~0.45 с вікно, у 3 рази менше ударів).
         last_exc = None
-        for attempt in range(8):
+        for attempt in range(3):
             try:
                 pyperclip.copy(text)
                 last_exc = None
                 break
             except Exception as exc:
                 last_exc = exc
-                time.sleep(0.05)
+                time.sleep(0.15)
         if last_exc is not None:
             raise last_exc
         time.sleep(PASTE_DELAY)
@@ -1175,9 +1182,13 @@ def _single_instance():
     """Два екземпляри = кожна фраза вставляється двічі. Іменований м'ютекс
     Windows живе, поки живий процес, тож після краху нічого чистити не треба."""
     try:
-        k32 = ctypes.windll.kernel32
+        # ctypes.windll.kernel32.GetLastError() ненадійний: ctypes сам робить
+        # WinAPI-виклики між CreateMutexW і GetLastError і затирає код помилки.
+        # Потрібен WinDLL(use_last_error=True) + ctypes.get_last_error().
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.CreateMutexW.restype = ctypes.c_void_p
         handle = k32.CreateMutexW(None, False, "Local\\UkrainianVoiceTyping")
-        if k32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+        if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
             return False
         _mutex.append(handle)
     except Exception as exc:
