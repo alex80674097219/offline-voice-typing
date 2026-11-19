@@ -1268,18 +1268,22 @@ def main():
 
     suppressed = {k.strip().lower() for k in SUPPRESS.split(",") if k.strip()}
     registered = []
+    # HOTKEY=none - жодних окремих клавіш, лише подвійний Ctrl (19.11.2026:
+    # Num Lock / Scroll Lock / Pause заважали PrintScreen і роботі).
     for combo in [c.strip() for c in HOTKEY.split(",") if c.strip()]:
+        if combo.lower() in ("none", "off", "-"):
+            continue
         try:
             keyboard.add_hotkey(combo, make_toggle(combo),
                                 suppress=combo.lower() in suppressed)
             registered.append(combo)
         except Exception as exc:
             log("WARNING hotkey %r not registered: %s" % (combo, exc))
-    if not registered:
+    if not registered and not DOUBLE_TAP:
         log("ERROR: no hotkey could be registered")
         beep("error")
         sys.exit(1)
-    log("hotkeys: %s" % ", ".join(registered))
+    log("hotkeys: %s" % (", ".join(registered) or "none (double tap only)"))
     if LANG_HOTKEY:
         try:
             keyboard.add_hotkey(LANG_HOTKEY, cycle_language)
