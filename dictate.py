@@ -1300,7 +1300,10 @@ def main():
 
     _ui = Badge()
     log("ready")
-    ui("off", "Диктування: %s" % registered[0])
+    # 19.11: при HOTKEY=none список порожній - падали з IndexError одразу
+    # після "ready", програма тихо зникала.
+    start_key = registered[0] if registered else "2× %s" % (DOUBLE_TAP or "?")
+    ui("off", "Диктування: %s" % start_key)
     threading.Timer(3.0, lambda: _ui and _ui.hide()).start()
     _ui.run()
 
