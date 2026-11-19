@@ -614,6 +614,30 @@ def clean_cloud(text):
     return t
 
 
+def _clipboard_owner():
+    """Яка програма зараз тримає буфер обміну - для діагностики в лозі."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        u32, k32 = ctypes.windll.user32, ctypes.windll.kernel32
+        hwnd = u32.GetOpenClipboardWindow() or u32.GetClipboardOwner()
+        if not hwnd:
+            return "unknown"
+        pid = wintypes.DWORD()
+        u32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        h = k32.OpenProcess(0x1000, False, pid.value)
+        buf = ctypes.create_unicode_buffer(260)
+        size = wintypes.DWORD(260)
+        name = "pid %d" % pid.value
+        if h:
+            if k32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
+                name = buf.value.rsplit("\\", 1)[-1]
+            k32.CloseHandle(h)
+        return name
+    except Exception as exc:
+        return "? (%s)" % exc
+
+
 def paste(text):
     _pasting.set()
     try:
@@ -646,7 +670,14 @@ def paste(text):
                 last_exc = exc
                 time.sleep(0.15)
         if last_exc is not None:
-            raise last_exc
+            # 19.11: при активному копіюванні буфер зайнятий іншою програмою,
+            # фрази губилися (8 за день). Тепер друкуємо текст напряму
+            # (Unicode SendInput) - буфер не потрібен, фраза не губиться.
+            log("clipboard busy (held by %s) - typing directly"
+                % _clipboard_owner())
+            keyboard.write(text, delay=0.002)
+            old = None
+            return
         time.sleep(PASTE_DELAY)
         keyboard.send("ctrl+v")
         time.sleep(PASTE_DELAY * 2)
